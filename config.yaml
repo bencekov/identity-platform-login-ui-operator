@@ -1,14 +1,26 @@
-# Copyright 2022 Canonical Ltd.
-# See LICENSE file for licensing details.
+# This file defines charm config options, and populates the Configure tab on Charmhub.
+# If your charm does not require configuration options, delete this file entirely.
 #
-# TEMPLATE-TODO: change this example to suit your needs.
-# If you don't need a config, you can remove the file entirely.
-# It ties in to the example _on_config_changed handler in src/charm.py
-#
-# Learn more about config at: https://juju.is/docs/sdk/config
+# See https://juju.is/docs/config for guidance.
 
 options:
-  thing:
-    default: 🎁
-    description: A thing used by the charm.
+  # An example config option to customise the log level of the workload
+  log-level:
+    description: |
+      Configures the log level of gunicorn. 
+
+      Acceptable values are: "info", "debug", "warning", "error" and "critical"
+    default: "info"
     type: string
+  kratos_url:
+    description: Kratos API URL. In the final version the operator uses the interface relation to get Kratos API URL. Config value is a fallback.
+    type: string
+    default: "DEFAULT-KRATOS-PLACEHOLDER"
+  hydra_url:
+    description: Hydra API URL. In the final version the operator uses the interface relation to get Hydra API URL. Config value is a fallback.
+    type: string
+    default: "DEFAULT-HYDRA-PLACEHOLDER"
+  port:
+    description: The port where the Identity Platform Login UI is Accessible
+    type: string
+    default: "8080"

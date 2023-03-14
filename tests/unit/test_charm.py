@@ -1,66 +1,101 @@
-# Copyright 2022 Canonical Ltd.
+# Copyright 2023 bence
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
-import unittest
-from unittest.mock import Mock
+import pytest
+from ops.model import ActiveStatus, WaitingStatus
+import json
+import yaml
 
-from charm import OperatorTemplateCharm
-from ops.model import ActiveStatus
-from ops.testing import Harness
+CONTAINER_NAME = "login_ui"
+TEST_PORT = "55555"
+TEST_HYDRA_URL = "http://hydra:port"
+TEST_KRATOS_URL = "http://kratos:port"
 
 
-class TestCharm(unittest.TestCase):
-    def setUp(self):
-        self.harness = Harness(OperatorTemplateCharm)
-        self.addCleanup(self.harness.cleanup)
-        self.harness.begin()
+def setup_ingress_relation(harness, type):
+    relation_id = harness.add_relation(f"{type}-ingress", f"{type}-traefik")
+    harness.add_relation_unit(relation_id, f"{type}-traefik/0")
+    harness.update_relation_data(
+        relation_id,
+        f"{type}-traefik",
+        {"ingress": json.dumps({"url": f"http://{type}:80/{harness.model.name}-identity-platform-login-ui"})},
+    )
+    return relation_id
 
-    def test_config_changed(self):
-        self.assertEqual(list(self.harness.charm._stored.things), [])
-        self.harness.update_config({"thing": "foo"})
-        self.assertEqual(list(self.harness.charm._stored.things), ["foo"])
 
-    def test_action(self):
-        # the harness doesn't (yet!) help much with actions themselves
-        action_event = Mock(params={"fail": ""})
-        self.harness.charm._on_fortune_action(action_event)
+def test_not_leader(harness):
+    harness.set_leader(False)
 
-        self.assertTrue(action_event.set_results.called)
+    harness.charm.on.login_ui_pebble_ready.emit(CONTAINER_NAME)
 
-    def test_action_fail(self):
-        action_event = Mock(params={"fail": "fail this"})
-        self.harness.charm._on_fortune_action(action_event)
+    assert (
+        "status_set",
+        "waiting",
+        "Waiting to connect to Login_UI container",
+        {"is_app": False},
+    ) in harness._get_backend_calls()
 
-        self.assertEqual(action_event.fail.call_args, [("fail this",)])
 
-    def test_httpbin_pebble_ready(self):
-        # Check the initial Pebble plan is empty
-        initial_plan = self.harness.get_container_pebble_plan("httpbin")
-        self.assertEqual(initial_plan.to_yaml(), "{}\n")
-        # Expected plan after Pebble ready with default config
-        expected_plan = {
+def test_install_can_connect(harness):
+    harness.set_can_connect(CONTAINER_NAME, True)
+    harness.charm.on.login_ui_pebble_ready.emit(CONTAINER_NAME)
+
+    assert harness.charm.unit.status == ActiveStatus()
+
+
+def test_install_can_not_connect(harness):
+    harness.set_can_connect(CONTAINER_NAME, False)
+    harness.charm.on.login_ui_pebble_ready.emit(CONTAINER_NAME)
+
+    assert harness.charm.unit.status == WaitingStatus("Waiting to connect to Login_UI container")
+
+
+def test_layer_updated(harness) -> None:
+    harness.set_can_connect(CONTAINER_NAME, True)
+    harness.charm.on.login_ui_pebble_ready.emit(CONTAINER_NAME)
+
+    harness.update_config({"hydra_url": TEST_HYDRA_URL})
+    harness.update_config({"kratos_url": TEST_KRATOS_URL})
+    harness.update_config({"port": TEST_PORT})
+
+    expected_layer = {
+            "summary": "login_ui layer",
+            "description": "pebble config layer for identity platform login ui",
             "services": {
-                "httpbin": {
+                CONTAINER_NAME: {
                     "override": "replace",
-                    "summary": "httpbin",
-                    "command": "gunicorn -b 0.0.0.0:80 httpbin:app -k gevent",
+                    "summary": "identity platform login ui",
+                    "command": "/id/identity_platform_login_ui",
                     "startup": "enabled",
-                    "environment": {"thing": "🎁"},
+                    "environment": {
+                        'HYDRA_ADMIN_URL': TEST_HYDRA_URL,
+                        'KRATOS_PUBLIC_URL': TEST_KRATOS_URL,
+                        'PORT': TEST_PORT
+                    },
                 }
             },
         }
-        # Get the httpbin container from the model
-        container = self.harness.model.unit.get_container("httpbin")
-        # Emit the PebbleReadyEvent carrying the httpbin container
-        self.harness.charm.on.httpbin_pebble_ready.emit(container)
-        # Get the plan now we've run PebbleReady
-        updated_plan = self.harness.get_container_pebble_plan("httpbin").to_dict()
-        # Check we've got the plan we expected
-        self.assertEqual(expected_plan, updated_plan)
-        # Check the service was started
-        service = self.harness.model.unit.get_container("httpbin").get_service("httpbin")
-        self.assertTrue(service.is_running())
-        # Ensure we set an ActiveStatus with no message
-        self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+
+    assert harness.charm._login_ui_layer.to_dict() == expected_layer
+
+
+#finish test
+def test_fetch_endpoint_with_ingress_relation_data(harness) -> None:
+    harness.set_can_connect(CONTAINER_NAME, True)
+
+    setup_ingress_relation(harness, "public")
+
+    expected_data = "http://public:80/testing-identity-platform-login-ui"
+
+    assert harness.charm._fetch_endpoint() == expected_data
+
+
+#finish test
+def test_fetch_endpoint_without_ingress_relation_data(harness) -> None:
+    harness.set_can_connect(CONTAINER_NAME, True)
+
+    expected_data = "identity-platform-login-ui-operator.testing.svc.cluster.local:8080"
+
+    assert harness.charm._fetch_endpoint() == expected_data

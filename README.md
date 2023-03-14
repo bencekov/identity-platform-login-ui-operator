@@ -1,4 +1,4 @@
-# identity-platform-login-ui-operator
+# identity-platform-login-ui-charm
 Charmed operator for Identity Platform Login UI
 
 This charm is currently not available in charmhub.
