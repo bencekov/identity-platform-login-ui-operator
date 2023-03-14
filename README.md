@@ -1,8 +1,10 @@
-# This repo/template is archived.
+# identity-platform-login-ui-operator
+Charmed operator for Identity Platform Login UI
 
-The initial purpose of this template was to test out possible alternatives to the `charmcraft init`
-defaults. Since this [PR](https://github.com/canonical/charmcraft/pull/932), the `charmcraft init`
-now supports 3 different profiles, all of which come with the same directory structure/layout as
-this template.
+This charm is currently not available in charmhub.
 
-Please use that in the future, and file any issues at https://github.com/canonical/charmcraft/issues/
+## Testing
+
+Unit and integration tests can be run with tox:
+```bash
+tox -e unit
